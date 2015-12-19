@@ -59,7 +59,7 @@ def get_layer_statistics(data):
     ticks = list(ticks)
     return (mean, std, [y, x, ticks])
 
-def infer_one_generic(image, layers=None):
+def psy_infer_one_generic(image, layers=None):
     """
     Run inference on one image for a generic model
     Returns (output, visualizations)
@@ -105,10 +105,34 @@ def infer_one_generic(image, layers=None):
     net.blobs['data'].data[...] = image
     
     output = net.forward()
-    
+
+    network_outputs = {}
+    for name, blob in output.iteritems():
+        data = net.blobs[name].data[0].argmax(axis=0).astype(np.float32)
+        org_shape = data.shape
+        data = data.reshape((org_shape[0] * org_shape[1], 1, 1))
+        max_val = max(1, data.max())
+        data /= max_val
+        data *= 255
+        #jet
+        redmap = 255.0 * np.array([0,0,0,0,0.5,1,1,1,0.5])
+        greenmap = 255.0 * np.array([0,0,0.5,1,1,1,0.5,0,0])
+        bluemap = 255.0 * np.array([0.5,1,1,1,0.5,0,0,0,0])
+        red = np.interp(data*(len(redmap)-1)/255.0, xrange(len(redmap)), redmap)
+        green = np.interp(data*(len(greenmap)-1)/255.0, xrange(len(greenmap)), greenmap)
+        blue = np.interp(data*(len(bluemap)-1)/255.0, xrange(len(bluemap)), bluemap)
+        # Slap the channels back together
+        data = np.concatenate( (red[...,np.newaxis], green[...,np.newaxis], blue[...,np.newaxis]), axis=3 )
+        data = np.minimum(data,255)
+        data = np.maximum(data,0)
+        # convert back to uint8
+        data = data.astype(np.uint8)
+        data = data.reshape((org_shape[0], org_shape[1], 3))
+        network_outputs[name] = utils.image.embed_image_html(data)
+
     visualizations = get_layer_visualizations(net, layers)
     
-    return (output, visualizations)
+    return (network_outputs, visualizations)
 
 def get_layer_visualizations(net, layers='all'):
     """
@@ -522,9 +546,9 @@ def generic_image_model_psy_infer_one():
     # show visualizations
     layers = 'all'
     
-    outputs, visualizations = infer_one_generic(image, layers=layers)
+    outputs, visualizations = psy_infer_one_generic(image, layers=layers)
 
-    return flask.render_template('models/images/generic/infer_one.html',
+    return flask.render_template('models/images/generic/psy_infer_one.html',
                 job             = None,
                 image_src       = utils.image.embed_image_html(image),
                 network_outputs = outputs,

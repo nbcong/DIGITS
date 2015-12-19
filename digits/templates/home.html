@@ -43,13 +43,15 @@ function deleteJob(job_id) {
                 <div>
                     <label for="psy_deploy_network_proto">Deploy network proto</label>
                     <span data-original-title="Path to deploy network proto file (i.e. /home/congn/ML/model/xxx.deploy.prototxt)" name="psy_deploy_network_proto_explanation" class="explanation-tooltip glyphicon glyphicon-question-sign" data-container="body" title=""></span>
-                    <input class="form-control autocomplete_path" id="psy_deploy_network_proto" name="psy_deploy_network_proto" value="" type="text">
+                    <input class="form-control autocomplete_path" id="psy_deploy_network_proto" value = '/home/congn/ML/model/deploy.prototxt'
+                    name="psy_deploy_network_proto" value="" type="text">
                 </div>
                 <br/>
                 <div>
                     <label for="psy_trained_network">Pretrained model</label>
                     <span data-original-title="Path to trained model file (i.e. /home/congn/ML/model/snapshot/xxx.caffemodel)" name="psy_trained_network_explanation" class="explanation-tooltip glyphicon glyphicon-question-sign" data-container="body" title=""></span>
-                    <input class="form-control autocomplete_path" id="psy_trained_network" name="psy_trained_network" value="" type="text">
+                    <input class="form-control autocomplete_path" id="psy_trained_network" value = '/home/congn/ML/model/snapshot_20151218/train_ue_fcn_iter_20000.caffemodel'
+                    name="psy_trained_network" value="" type="text">
                 </div>
                 <br/>
                 <div>
