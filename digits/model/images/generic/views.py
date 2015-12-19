@@ -3,6 +3,7 @@
 import os
 import re
 import tempfile
+import operator
 
 import flask
 import werkzeug.exceptions
@@ -21,8 +22,196 @@ from job import GenericImageModelJob
 from digits.status import Status
 import platform
 from digits.utils import filesystem as fs
+import caffe
+from caffe.proto import caffe_pb2
+from google.protobuf import text_format
+import numpy as np
 
 NAMESPACE   = '/models/images/generic'
+
+#paths to test model
+psy_test_model = {
+    'trained_model_path': '',
+    'deploy_model_proto': '',
+    'network': None,
+    'net': None,
+    'height': 180,
+    'width': 320
+}
+
+#======================================================================================
+def get_layer_statistics(data):
+    """
+    Returns statistics for the given layer data:
+        (mean, standard deviation, histogram)
+            histogram -- [y, x, ticks]
+
+    Arguments:
+    data -- a np.ndarray
+    """
+    # XXX These calculations can be super slow
+    mean = np.mean(data)
+    std = np.std(data)
+    y, x = np.histogram(data, bins=20)
+    y = list(y)
+    ticks = x[[0,len(x)/2,-1]]
+    x = [(x[i]+x[i+1])/2.0 for i in xrange(len(x)-1)]
+    ticks = list(ticks)
+    return (mean, std, [y, x, ticks])
+
+def infer_one_generic(image, layers=None):
+    """
+    Run inference on one image for a generic model
+    Returns (output, visualizations)
+        output -- an dict of string -> np.ndarray
+        visualizations -- a list of dicts for the specified layers
+    Returns (None, None) if something goes wrong
+
+    Arguments:
+    image -- an np.ndarray
+
+    Keyword arguments:
+    snapshot_epoch -- which snapshot to use
+    layers -- which layer activation[s] and weight[s] to visualize
+    """
+
+    net = None
+    if psy_test_model['net'] == None and \
+       psy_test_model['deploy_model_proto'] != '' and \
+       psy_test_model['trained_model_path'] != '':
+        psy_test_model['net'] = caffe.Net(psy_test_model['deploy_model_proto'], psy_test_model['trained_model_path'], caffe.TEST)
+        network = caffe_pb2.NetParameter()
+        with open(psy_test_model['deploy_model_proto']) as infile:
+            text_format.Merge(infile.read(), network)
+        psy_test_model['network'] = network
+        # TODO:
+        # we can get the width, height from network
+        # network.input_shape
+        # will make a change later
+        
+    net = psy_test_model['net']
+
+    image = np.array(image, dtype=np.float32)
+
+    # TODO: hacky
+    mean = np.array((104.00698793,116.66876762,122.67891434))
+    # image is formatted as RGB, convert to BGR
+    image = image[:, :, ::-1]
+    image -= mean
+    image = image.transpose((2,0,1))
+
+    # shape for input (data blob is N x C x H x W), set data
+    net.blobs['data'].reshape(1, *image.shape)
+    net.blobs['data'].data[...] = image
+    
+    output = net.forward()
+    
+    visualizations = get_layer_visualizations(net, layers)
+    
+    return (output, visualizations)
+
+def get_layer_visualizations(net, layers='all'):
+    """
+    Returns visualizations of various layers in the network
+    """
+    network = psy_test_model['network']
+    # add visualizations
+    visualizations = []
+    if layers and layers != 'none':
+        if layers == 'all':
+            added_activations = []
+            for layer in network.layer:
+                print 'Computing visualizations for "%s" ...' % layer.name
+                for bottom in layer.bottom:
+                    if bottom in net.blobs and bottom not in added_activations:
+                        data = net.blobs[bottom].data[0]
+                        vis = utils.image.get_layer_vis_square(data,
+                                allow_heatmap=bool(bottom != 'data'))
+                        mean, std, hist = get_layer_statistics(data)
+                        visualizations.append(
+                                {
+                                    'name': str(bottom),
+                                    'vis_type': 'Activation',
+                                    'image_html': utils.image.embed_image_html(vis),
+                                    'data_stats': {
+                                        'shape': data.shape,
+                                        'mean': mean,
+                                        'stddev': std,
+                                        'histogram': hist,
+                                        },
+                                    }
+                                )
+                        added_activations.append(bottom)
+                if layer.name in net.params:
+                    data = net.params[layer.name][0].data
+                    if layer.type not in ['InnerProduct']:
+                        vis = utils.image.get_layer_vis_square(data)
+                    else:
+                        vis = None
+                    mean, std, hist = get_layer_statistics(data)
+                    params = net.params[layer.name]
+                    weight_count = reduce(operator.mul, params[0].data.shape, 1)
+                    if len(params) > 1:
+                        bias_count = reduce(operator.mul, params[1].data.shape, 1)
+                    else:
+                        bias_count = 0
+                    parameter_count = weight_count + bias_count
+                    visualizations.append(
+                            {
+                                'name': str(layer.name),
+                                'vis_type': 'Weights',
+                                'layer_type': layer.type,
+                                'param_count': parameter_count,
+                                'image_html': utils.image.embed_image_html(vis),
+                                'data_stats': {
+                                    'shape':data.shape,
+                                    'mean': mean,
+                                    'stddev': std,
+                                    'histogram': hist,
+                                    },
+                                }
+                            )
+                for top in layer.top:
+                    if top in net.blobs and top not in added_activations:
+                        data = net.blobs[top].data[0]
+                        normalize = True
+                        # don't normalize softmax layers
+                        if layer.type == 'Softmax':
+                            normalize = False
+                        vis = utils.image.get_layer_vis_square(data,
+                                normalize = normalize,
+                                allow_heatmap = bool(top != 'data'))
+                        mean, std, hist = get_layer_statistics(data)
+                        visualizations.append(
+                                {
+                                    'name': str(top),
+                                    'vis_type': 'Activation',
+                                    'image_html': utils.image.embed_image_html(vis),
+                                    'data_stats': {
+                                        'shape': data.shape,
+                                        'mean': mean,
+                                        'stddev': std,
+                                        'histogram': hist,
+                                        },
+                                    }
+                                )
+                        added_activations.append(top)
+        else:
+            raise NotImplementedError
+
+    return visualizations
+#======================================================================================
+
+
+
+
+
+
+
+
+
+
+
 
 @app.route(NAMESPACE + '/new', methods=['GET'])
 @autodoc('models')
@@ -237,6 +426,7 @@ def generic_image_model_infer_one():
     """
     Infer one image
     """
+
     job = job_from_request()
 
     image = None
@@ -280,6 +470,68 @@ def generic_image_model_infer_one():
                 visualizations  = visualizations,
                 total_parameters= sum(v['param_count'] for v in visualizations if v['vis_type'] == 'Weights'),
                 )
+
+@app.route(NAMESPACE + '/psy_infer_one.json', methods=['POST'])
+@app.route(NAMESPACE + '/psy_infer_one', methods=['POST', 'GET'])
+@autodoc(['models', 'api'])
+def generic_image_model_psy_infer_one():
+    """
+    Infer one image
+    """
+
+    image = None
+    if 'psy_test_image_file' in flask.request.files and flask.request.files['psy_test_image_file']:
+        outfile = tempfile.mkstemp(suffix='.bin')
+        flask.request.files['psy_test_image_file'].save(outfile[1])
+        image = utils.image.load_image(outfile[1])
+        os.close(outfile[0])
+        os.remove(outfile[1])
+    else:
+        raise werkzeug.exceptions.BadRequest('must provide test image file')
+
+    psy_trained_model = None
+    if 'psy_trained_network' in flask.request.form:
+        psy_trained_model = str(flask.request.form['psy_trained_network'])
+    if psy_trained_model == None or psy_trained_model == '':
+        raise werkzeug.exceptions.BadRequest('must provide trained network')
+
+    psy_deploy_model_proto = None
+    if 'psy_deploy_network_proto' in flask.request.form:
+        psy_deploy_model_proto = str(flask.request.form['psy_deploy_network_proto'])
+    if psy_deploy_model_proto == None or psy_deploy_model_proto == '':
+        raise werkzeug.exceptions.BadRequest('must provide deploy network proto')
+
+    if psy_trained_model != psy_test_model['trained_model_path'] or \
+        psy_deploy_model_proto != psy_test_model['deploy_model_proto']:
+        psy_test_model['net'] = None
+        psy_test_model['network'] = None
+
+    psy_test_model['trained_model_path'] = psy_trained_model
+    psy_test_model['deploy_model_proto'] = psy_deploy_model_proto
+    
+    # resize image
+    auto_resize_image = True
+    if auto_resize_image:
+        height = psy_test_model['height']
+        width = psy_test_model['width']
+        image = utils.image.resize_image(image, height, width,
+                channels = 3,
+                resize_mode = 'squash',
+                )
+
+    # show visualizations
+    layers = 'all'
+    
+    outputs, visualizations = infer_one_generic(image, layers=layers)
+
+    return flask.render_template('models/images/generic/infer_one.html',
+                job             = None,
+                image_src       = utils.image.embed_image_html(image),
+                network_outputs = outputs,
+                visualizations  = visualizations,
+                total_parameters= sum(v['param_count'] for v in visualizations if v['vis_type'] == 'Weights'),
+                )
+    
 
 @app.route(NAMESPACE + '/infer_many.json', methods=['POST'])
 @app.route(NAMESPACE + '/infer_many', methods=['POST', 'GET'])
