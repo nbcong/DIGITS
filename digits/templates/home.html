@@ -36,6 +36,39 @@ function deleteJob(job_id) {
 {% include 'job_management.html' %}
 
 <div class="row">
+    <div class="col-sm-12">
+        <div class="well">            
+            <h2>Test Trained Segmentation Network Model</h2>
+            <form id="psy-test-model-form" enctype="multipart/form-data" method="post" onkeypress="return event.keyCode != 13;">
+                <div>
+                    <label for="psy_deploy_network_proto">Deploy network proto</label>
+                    <span data-original-title="Path to deploy network proto file (i.e. /home/congn/ML/model/xxx.deploy.prototxt)" name="psy_deploy_network_proto_explanation" class="explanation-tooltip glyphicon glyphicon-question-sign" data-container="body" title=""></span>
+                    <input class="form-control autocomplete_path" id="psy_deploy_network_proto" name="psy_deploy_network_proto" value="" type="text">
+                </div>
+                <br/>
+                <div>
+                    <label for="psy_trained_network">Pretrained model</label>
+                    <span data-original-title="Path to trained model file (i.e. /home/congn/ML/model/snapshot/xxx.caffemodel)" name="psy_trained_network_explanation" class="explanation-tooltip glyphicon glyphicon-question-sign" data-container="body" title=""></span>
+                    <input class="form-control autocomplete_path" id="psy_trained_network" name="psy_trained_network" value="" type="text">
+                </div>
+                <br/>
+                <div>
+                    <label for="psy_test_image_file" class="control-label">Upload test image</label>
+                    <span data-original-title="Input image will be automatically RESIZED into 320x180!" name="psy_test_image_file_explanation" class="explanation-tooltip glyphicon glyphicon-question-sign" data-container="body" title=""></span>
+                    <input id="psy_test_image_file" name="psy_test_image_file" class="form-control" type="file">
+                </div>
+                <br/>
+                <div>
+                    <button name="psy-infer-btn" formaction="/models/images/generic/psy_infer_one" formmethod="post" formenctype="multipart/form-data" formtarget="_blank" class="btn btn-primary">
+                                Test
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<div class="row">
     <div class="col-sm-6">
         <div class="well">
 

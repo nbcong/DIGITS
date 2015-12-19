@@ -2,8 +2,12 @@
 {% extends "job.html" %}
 
 {% block nav %}
+{% if job %}
 <li><a href="{{url_for('digits.model.views.show', job_id=model_job.id())}}">{{model_job.name()}}</a></li>
 <li class="active"><a>Test One</a></li>
+{% else %}
+<li class="active"><a>Test Segmentation Network Model</a></li>
+{% endif %}
 {% endblock %}
 
 {% block job_content %}
@@ -12,10 +16,14 @@
 
 <div class="page-header">
     <h1>
-        {{model_job.name()}}
+        {% if job %}
+        {{job.name()}}
         <small>
             {{model_job.job_type()}}
         </small>
+        {% else %}
+        NOTE: Forced to run on CPU, beacause we can be training on GPU...
+        {% endif %}
     </h1>
 </div>
 
