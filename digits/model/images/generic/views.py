@@ -90,8 +90,9 @@ def psy_infer_one_generic(image, layers=None):
         # will make a change later
         
     net = psy_test_model['net']
-
+    
     image = np.array(image, dtype=np.float32)
+    ori_img = image.copy()
 
     # TODO: hacky
     mean = np.array((104.00698793,116.66876762,122.67891434))
@@ -126,9 +127,11 @@ def psy_infer_one_generic(image, layers=None):
         data = np.minimum(data,255)
         data = np.maximum(data,0)
         # convert back to uint8
-        data = data.astype(np.uint8)
         data = data.reshape((org_shape[0], org_shape[1], 3))
+        data = 0.6 * data + 0.4 * ori_img
+        data = data.astype(np.uint8)
         network_outputs[name] = utils.image.embed_image_html(data)
+
 
     visualizations = get_layer_visualizations(net, layers)
     
